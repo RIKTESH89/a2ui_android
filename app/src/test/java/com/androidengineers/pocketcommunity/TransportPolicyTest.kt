@@ -56,4 +56,14 @@ class TransportPolicyTest {
             )
         )
     }
+
+    @Test
+    fun signedServerlessAssetResolvesAgainstTheConfiguredAgent() {
+        val token = "eyJ2IjoxLCJwIjoicGV4ZWxzIiwidSI6Imh0dHBzIn0." + "a".repeat(64)
+        val reference =
+            "uiagent://asset/$token?provider=pexels&credit=Ana+Example" +
+                "&source=https%3A%2F%2Fwww.pexels.com%2Fphoto%2Ftokyo-123%2F"
+        val image = resolveUiAgentRemoteImage("https://uiagent.vercel.app/chat", reference)
+        assertEquals("https://uiagent.vercel.app/media/$token", image?.imageUrl)
+    }
 }

@@ -10,10 +10,10 @@ The visual language is inspired by the supplied motion reference, but the flow i
 - Versioned UIAgent hybrid catalog plus Basic Catalog fallback registration.
 - Catalog capability metadata on every request and server-side best-match negotiation.
 - Native Text, Row, Column, List, Card, Button, CheckBox, Divider, Image and Video.
-- Real Pexels/Pixabay imagery through a server-side search, validation, download/cache and opaque asset-ID pipeline; branded gradients remain the fallback.
+- Real Pexels/Pixabay imagery through a server-side search, validation, download/proxy and opaque asset-ID pipeline; branded gradients remain the fallback.
 - Safe built-in AndroidX A2UI icons selected from an explicit allowlist.
 - Media3/ExoPlayer playback with lifecycle cleanup and a client-side trusted media registry.
-- Horizontal rails and vertical feeds through the A2UI `List` component.
+- Horizontal rails through A2UI `List`; vertical feeds use `Column` because the conversation host already scrolls vertically.
 - Incremental NDJSON transport: a loading surface renders before slow local inference completes, then updates in place.
 - Bounded payloads, strict graph/property/action/media validation, request cancellation, one-model concurrency, request IDs, no redirects, and release-only HTTPS policy.
 
@@ -35,7 +35,7 @@ Run the Android `app` configuration. In **Setup**, use:
 
 - Emulator: `http://10.0.2.2:8787/chat`
 - Physical device after `adb reverse tcp:8787 tcp:8787`: `http://127.0.0.1:8787/chat`
-- Production: an authenticated `https://…/chat` endpoint
+- Stable Vercel deployment: `https://uiagent-a2ui.vercel.app/chat`
 
 Try prompts such as:
 
@@ -44,7 +44,7 @@ Try prompts such as:
 - `Create a playable video card with a title, metadata and follow-up action`
 - `Create a vertical travel dashboard feed with a ticket, weather and packing checklist`
 
-The configured OpenRouter model can be rate-limited or temporarily unavailable. The loading A2UI surface appears immediately while the remote request is running.
+The Vercel deployment and laptop server are independent, so the stable endpoint remains available when the laptop is off. The configured OpenRouter free model can still be rate-limited or temporarily unavailable. The loading A2UI surface appears immediately while the remote request is running.
 
 ## Message flow
 

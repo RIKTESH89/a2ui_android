@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { createMediaService } from './media.mjs';
 import {
   UIAGENT_CATALOG,
@@ -339,10 +340,11 @@ function validateInput(input) {
   }
 }
 
-const server = createServer(async (request, response) => {
+export async function handleRequest(request, response, routedPath) {
   const requestId = randomUUID();
-  if (media.handleRequest(request, response, requestId)) return;
-  if (request.method === 'GET' && request.url === '/health') {
+  const pathname = routedPath ?? new URL(request.url, 'http://localhost').pathname;
+  if (media.handleRequest(request, response, requestId, pathname)) return;
+  if (request.method === 'GET' && pathname === '/health') {
     const configured =
       provider === 'ollama'
         ? await ollamaHealth()
@@ -365,7 +367,7 @@ const server = createServer(async (request, response) => {
       imageProviders: media.configuredProviders,
     });
   }
-  if (request.method !== 'POST' || request.url !== '/chat') {
+  if (request.method !== 'POST' || pathname !== '/chat') {
     return send(response, requestId, 404, { error: 'Not found' });
   }
   if (request.headers['content-type']?.split(';')[0] !== 'application/json') {
@@ -492,13 +494,15 @@ const server = createServer(async (request, response) => {
   } finally {
     activeRequests--;
   }
-});
+}
 
-server.headersTimeout = 10_000;
-server.requestTimeout = 15_000;
-server.keepAliveTimeout = 5_000;
-server.maxRequestsPerSocket = 50;
-server.listen(port, '127.0.0.1', () => {
+function startLocalServer() {
+  const server = createServer(handleRequest);
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 15_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxRequestsPerSocket = 50;
+  server.listen(port, '127.0.0.1', () => {
   const model =
     provider === 'ollama'
       ? ollamaModel
@@ -507,4 +511,10 @@ server.listen(port, '127.0.0.1', () => {
         : geminiModel;
   console.log(`UIAgent ${provider} server (${model}): http://127.0.0.1:${port}`);
   console.log(`Preferred catalog: ${UIAGENT_CATALOG}`);
-});
+  });
+  return server;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  startLocalServer();
+}

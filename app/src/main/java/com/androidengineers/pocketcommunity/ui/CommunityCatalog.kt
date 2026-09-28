@@ -113,7 +113,9 @@ fun resolveUiAgentRemoteImage(endpoint: String, reference: String): UiAgentRemot
             val asset = URI(reference)
             if (asset.scheme != "uiagent" || asset.host != "asset") return null
             val token = asset.path.removePrefix("/")
-            if (!token.matches(Regex("[a-f0-9]{32}"))) return null
+            val localToken = Regex("[a-f0-9]{32}")
+            val signedToken = Regex("[A-Za-z0-9_-]{1,1900}\\.[a-f0-9]{64}")
+            if (!localToken.matches(token) && !signedToken.matches(token)) return null
             val query =
                 asset.rawQuery
                     ?.split('&')

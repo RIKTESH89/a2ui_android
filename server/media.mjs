@@ -1,13 +1,18 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const MAX_ASSET_BYTES = 8_000_000;
 const MAX_ASSETS = 32;
 const ASSET_TTL_MS = 24 * 60 * 60 * 1000;
-const ASSET_PATH = /^\/media\/([a-f0-9]{32})$/;
+const ASSET_PATH = /^\/media\/([A-Za-z0-9_.-]{1,2048})$/;
+const SIGNED_TOKEN = /^([A-Za-z0-9_-]{1,1900})\.([a-f0-9]{64})$/;
 
 export function createMediaService({ env = process.env, fetchImpl = fetch, now = Date.now } = {}) {
   const assets = new Map();
   const configuredProviders = providerOrder(env).filter(name => providerKey(name, env));
+  const signingKey = env.MEDIA_SIGNING_KEY?.trim() || undefined;
+  if (signingKey !== undefined && signingKey.length < 32) {
+    throw Error('MEDIA_SIGNING_KEY must contain at least 32 characters');
+  }
 
   async function resolveSurface(reply, signal) {
     const trustedAssetIds = new Set();
@@ -40,20 +45,32 @@ export function createMediaService({ env = process.env, fetchImpl = fetch, now =
             ? await searchPexels(query, env.PEXELS_API_KEY, fetchImpl, signal)
             : await searchPixabay(query, env.PIXABAY_API_KEY, fetchImpl, signal);
         if (!candidate) continue;
-        const image = await downloadImage(candidate.imageUrl, name, fetchImpl, signal);
-        evictExpired(assets, now());
-        while (assets.size >= MAX_ASSETS) assets.delete(assets.keys().next().value);
-        const token = randomUUID().replaceAll('-', '');
-        const asset = {
-          token,
-          provider: name,
-          credit: candidate.credit,
-          sourceUrl: candidate.sourceUrl,
-          bytes: image.bytes,
-          contentType: image.contentType,
-          expiresAt: now() + ASSET_TTL_MS,
-        };
-        assets.set(token, asset);
+        const expiresAt = now() + ASSET_TTL_MS;
+        let asset;
+        if (signingKey) {
+          asset = {
+            token: signAsset({ provider: name, imageUrl: candidate.imageUrl, expiresAt }, signingKey),
+            provider: name,
+            credit: candidate.credit,
+            sourceUrl: candidate.sourceUrl,
+            expiresAt,
+          };
+        } else {
+          const image = await downloadImage(candidate.imageUrl, name, fetchImpl, signal);
+          evictExpired(assets, now());
+          while (assets.size >= MAX_ASSETS) assets.delete(assets.keys().next().value);
+          const token = randomUUID().replaceAll('-', '');
+          asset = {
+            token,
+            provider: name,
+            credit: candidate.credit,
+            sourceUrl: candidate.sourceUrl,
+            bytes: image.bytes,
+            contentType: image.contentType,
+            expiresAt,
+          };
+          assets.set(token, asset);
+        }
         return asset;
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'unknown failure';
@@ -63,10 +80,28 @@ export function createMediaService({ env = process.env, fetchImpl = fetch, now =
     return null;
   }
 
-  function handleRequest(request, response, requestId) {
+  function handleRequest(request, response, requestId, routedPath) {
     if (request.method !== 'GET') return false;
-    const match = new URL(request.url, 'http://localhost').pathname.match(ASSET_PATH);
+    const match = (routedPath ?? new URL(request.url, 'http://localhost').pathname).match(ASSET_PATH);
     if (!match) return false;
+    if (signingKey && SIGNED_TOKEN.test(match[1])) {
+      void serveSignedAsset(match[1], request, response, requestId, signingKey, fetchImpl, now)
+        .catch(error => {
+          if (response.headersSent || response.writableEnded) return;
+          const detail = error instanceof Error ? error.message : 'unknown failure';
+          console.warn(`[media] signed image unavailable: ${detail}`);
+          const rejected = detail.includes('signed asset');
+          const body = Buffer.from(JSON.stringify({
+            error: rejected ? 'Media not found or expired' : 'Media unavailable',
+          }));
+          response.writeHead(
+            rejected ? 404 : 502,
+            mediaHeaders(requestId, 'application/json', body.length),
+          );
+          response.end(body);
+        });
+      return true;
+    }
     evictExpired(assets, now());
     const asset = assets.get(match[1]);
     if (!asset) {
@@ -88,6 +123,51 @@ export function createMediaService({ env = process.env, fetchImpl = fetch, now =
     resolveSurface,
     handleRequest,
   };
+}
+
+function signAsset(asset, signingKey) {
+  const payload = Buffer.from(JSON.stringify({
+    v: 1,
+    p: asset.provider,
+    u: asset.imageUrl,
+    e: asset.expiresAt,
+  })).toString('base64url');
+  const signature = createHmac('sha256', signingKey).update(payload).digest('hex');
+  return `${payload}.${signature}`;
+}
+
+function verifySignedAsset(token, signingKey, timestamp) {
+  const match = token.match(SIGNED_TOKEN);
+  if (!match) throw Error('invalid signed asset');
+  const expected = createHmac('sha256', signingKey).update(match[1]).digest();
+  const supplied = Buffer.from(match[2], 'hex');
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+    throw Error('invalid signed asset');
+  }
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(match[1], 'base64url').toString('utf8'));
+  } catch {
+    throw Error('invalid signed asset');
+  }
+  if (
+    payload?.v !== 1 ||
+    !['pexels', 'pixabay'].includes(payload.p) ||
+    typeof payload.u !== 'string' ||
+    !Number.isSafeInteger(payload.e) ||
+    payload.e <= timestamp ||
+    payload.e > timestamp + ASSET_TTL_MS + 60_000
+  ) throw Error('invalid or expired signed asset');
+  const domains = payload.p === 'pexels' ? ['pexels.com'] : ['pixabay.com'];
+  if (!isAllowedHttps(payload.u, domains)) throw Error('signed asset host is not trusted');
+  return { provider: payload.p, imageUrl: payload.u };
+}
+
+async function serveSignedAsset(token, request, response, requestId, signingKey, fetchImpl, now) {
+  const asset = verifySignedAsset(token, signingKey, now());
+  const image = await downloadImage(asset.imageUrl, asset.provider, fetchImpl);
+  response.writeHead(200, mediaHeaders(requestId, image.contentType, image.bytes.length, token));
+  response.end(image.bytes);
 }
 
 function providerOrder(env) {

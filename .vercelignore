@@ -1,0 +1,7 @@
+.git
+.gradle
+.idea
+**/build
+local.properties
+server/.env
+server/node_modules

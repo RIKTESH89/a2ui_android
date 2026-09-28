@@ -13,7 +13,19 @@ npm test
 
 When the client accepts `application/x-ndjson`, the server immediately emits `createSurface`, an empty data model, and a loading component tree. After inference and strict validation it emits final data/components and a completion record. Disconnecting the Android client cancels the upstream model call. Non-streaming JSON remains available as a compatibility fallback.
 
-For real card imagery, add either `PEXELS_API_KEY` or `PIXABAY_API_KEY`. The model still emits only semantic `uiagent://image/...` identifiers. The server searches providers, downloads a bounded image into a 24-hour in-memory cache, replaces the semantic identifier with an opaque server-issued UIAgent asset reference, and serves the bytes from `/media/{assetId}`. Android displays provider/contributor attribution and keeps the gradient artwork as a failure fallback. Pixabay images are downloaded rather than permanently hotlinked. iStock is intentionally not integrated without a separately licensed commercial account/API agreement.
+For real card imagery, add either `PEXELS_API_KEY` or `PIXABAY_API_KEY`. The model still emits only semantic `uiagent://image/...` identifiers. On the local server, images use a bounded 24-hour in-memory cache. When `MEDIA_SIGNING_KEY` is configured, the service instead issues 24-hour HMAC-signed asset references that any serverless instance can validate and proxy from `/media/{assetId}`. Android displays provider/contributor attribution and keeps the gradient artwork as a failure fallback. Pixabay images are downloaded rather than permanently hotlinked. iStock is intentionally not integrated without a separately licensed commercial account/API agreement.
+
+## Vercel deployment
+
+The repository includes Vercel functions for the same public contract: `GET /health`, `POST /chat`, and `GET /media/{assetId}`. Link the `a2ui` directory to a Vercel project, then configure these Production environment variables in the Vercel dashboard or CLI:
+
+- `LLM_PROVIDER=openrouter`
+- `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`
+- `IMAGE_PROVIDERS=pexels` and `PEXELS_API_KEY`
+- `MEDIA_SIGNING_KEY`, set to a randomly generated secret of at least 32 characters
+- `MAX_CONCURRENT_REQUESTS=1`
+
+Deploy with `vercel --prod`, verify `https://your-project.vercel.app/health`, and enter `https://your-project.vercel.app/chat` in the Android app. The Vercel endpoint is independent of the laptop server. The function has a 300-second maximum duration; free-model availability and upstream rate limits can still cause failed requests. Before production use, add authentication, durable distributed rate limiting, abuse controls, logging with redaction, and an uptime/alerting policy.
 
 The server validates component names/properties, graph reachability/depth, catalog choice, media identifiers, data paths, action shapes, text and payload sizes. The model can request only `uiagent://` media identifiers; Android resolves those through a trusted registry. Generated `ask` actions can only return a short non-URL prompt, and `save` is local-only.
 
@@ -25,6 +37,7 @@ Configuration:
 - `OPENROUTER_MODEL` and `OPENROUTER_API_KEY`
 - `IMAGE_PROVIDERS=pexels,pixabay` controls provider preference
 - `PEXELS_API_KEY` and `PIXABAY_API_KEY` are optional server-only image credentials
+- `MEDIA_SIGNING_KEY` enables stateless HMAC-signed image references for serverless deployment
 - `OLLAMA_BASE_URL`, restricted to loopback
 - `OLLAMA_MODEL` (default `qwen3:14b`)
 - `GEMINI_MODEL` and `GEMINI_API_KEY` for the optional cloud provider

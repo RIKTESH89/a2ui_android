@@ -1,0 +1,8 @@
+{
+  "name": "uiagent-a2ui",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
+}

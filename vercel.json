@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/chat", "destination": "/api/chat" },
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/media/:assetId", "destination": "/api/media/:assetId" }
+  ],
+  "functions": {
+    "api/chat.mjs": { "maxDuration": 300 },
+    "api/media/[assetId].mjs": { "maxDuration": 30 }
+  }
+}

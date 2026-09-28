@@ -1,4 +1,11 @@
-# Artwork
-`app/src/main/res/drawable-nodpi/community_art.png` was generated using the built-in image generation tool for this sample. It is generic illustrative artwork, not a photo or depiction of a listed event.
+# Media provenance
 
-Prompt: “Create one wide editorial illustration for an Android developer community meetup card in a light-themed mobile app. 3:2 composition, friendly diverse adult developers chatting in small groups in a contemporary Bengaluru coworking courtyard, laptops, lush plants, tall windows, warm sun, subtle lavender and violet accents, cream sage and navy palette. Premium clean softly textured illustration, elegant and welcoming, no text, no logos, no mascots, no watermarks. This is generic community artwork, not a depiction of a real event. Suitable cropped as a wide card banner.”
+`app/src/main/res/raw/uiagent_reference.mp4` is an eight-second, size-reduced excerpt of the reference video supplied by the user at `/Users/rikteshs20/Downloads/compose-agentic-flow.mp4`. It is bundled only as trusted local demo media for the `uiagent://video/reference` catalog identifier.
+
+The model never receives a filesystem path and cannot select an arbitrary media URL. The Android catalog resolves that exact opaque identifier to the packaged raw resource and renders it with Media3.
+
+Generated image components begin as one of four semantic `uiagent://image/...` identifiers. When a configured Pexels or Pixabay search succeeds, the server validates and downloads the selected image into a bounded 24-hour cache, then gives Android an opaque `uiagent://asset/...` reference containing provider attribution metadata. Android loads the bytes only from the configured UIAgent server and exposes a link to the validated official provider page. No stock image is checked into this repository; the UIAgent gradient artwork remains the offline/error fallback.
+
+iStock content is not used. Its commercial licensing and API access must be arranged separately before it can be considered for this pipeline.
+
+`app/src/main/res/drawable-nodpi/community_art.png` is legacy sample artwork and is not used by the UIAgent UI.

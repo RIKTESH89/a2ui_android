@@ -1,15 +1,15 @@
 package com.androidengineers.pocketcommunity
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.*
-import androidx.compose.material3.a2ui.catalog.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -19,6 +19,10 @@ import com.androidengineers.pocketcommunity.ui.*
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val agentPreferences = getSharedPreferences("agent", MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         enableEdgeToEdge(
             statusBarStyle =
                 androidx.activity.SystemBarStyle.light(
@@ -35,15 +39,33 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(
                 colorScheme =
                     lightColorScheme(
-                        primary = Color(0xFF6336E8),
+                        primary = Color(0xFFBD4C2F),
                         onPrimary = Color.White,
-                        background = Color(0xFFFAF8FF),
+                        primaryContainer = Color(0xFFFFDBCD),
+                        onPrimaryContainer = Color(0xFF421208),
+                        background = Color(0xFFF8F2E9),
                         surface = Color.White,
-                        onSurface = Color(0xFF191A38),
-                        surfaceVariant = Color(0xFFEFE9FF),
-                    )
+                        onSurface = Color(0xFF2B211C),
+                        surfaceVariant = Color(0xFFF0E4D8),
+                        onSurfaceVariant = Color(0xFF6C5B51),
+                        secondary = Color(0xFF638A68),
+                    ),
+                shapes =
+                    Shapes(
+                        small = RoundedCornerShape(12.dp),
+                        medium = RoundedCornerShape(20.dp),
+                        large = RoundedCornerShape(28.dp),
+                    ),
             ) {
-                val catalog = remember { communityCatalog() }
+                val catalogs =
+                    remember {
+                        uiAgentCatalogs { reference ->
+                            resolveUiAgentRemoteImage(
+                                agentPreferences.getString("endpoint", "").orEmpty(),
+                                reference,
+                            )
+                        }
+                    }
                 val vm: CommunityViewModel =
                     viewModel(
                         factory =
@@ -52,13 +74,10 @@ class MainActivity : ComponentActivity() {
                                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
                                     CommunityViewModel(
                                         HttpCommunityRepository(),
-                                        catalog,
-                                        getSharedPreferences("agent", MODE_PRIVATE)
-                                            .getString("endpoint", "")
-                                            .orEmpty(),
+                                        catalogs,
+                                        agentPreferences.getString("endpoint", "").orEmpty(),
                                         { endpoint ->
-                                            getSharedPreferences("agent", MODE_PRIVATE)
-                                                .edit()
+                                            agentPreferences.edit()
                                                 .putString("endpoint", endpoint)
                                                 .apply()
                                         },
@@ -66,9 +85,7 @@ class MainActivity : ComponentActivity() {
                                         as T
                             }
                     )
-                CommunityScreen(vm) { url ->
-                    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                }
+                CommunityScreen(vm)
             }
         }
     }

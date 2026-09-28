@@ -1,35 +1,23 @@
 package com.androidengineers.pocketcommunity.data
 
+import com.androidengineers.pocketcommunity.ui.UIAGENT_CATALOG_ID
 import kotlinx.serialization.json.*
 
-const val CATALOG = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"
-
-/** Deterministic protocol examples. These demonstrate the renderer, not model inference. */
+/** Deterministic protocol examples. These exercise the real renderer, not model inference. */
 class SurfaceMessages(private val id: String) {
     private val components = mutableListOf<JsonObject>()
     private val children = mutableListOf<String>()
-    private val values = buildJsonObject { repeat(4) { put("ready$it", false) } }
+    private val values = buildJsonObject { repeat(4) { put("choice$it", false) } }
 
     private fun add(type: String, fields: JsonObject): String {
         val key = "c${components.size}"
         components += buildJsonObject {
             put("id", key)
             put("component", type)
-            fields.forEach { (k, v) -> put(k, v) }
+            fields.forEach { (name, value) -> put(name, value) }
         }
         children += key
         return key
-    }
-
-    fun illustration() {
-        add(
-            "Image",
-            buildJsonObject {
-                put("url", "asset://community")
-                put("description", "Illustration of a developer gathering, not the actual event")
-                put("variant", "header")
-            },
-        )
     }
 
     fun text(value: String, variant: String = "body") {
@@ -42,7 +30,7 @@ class SurfaceMessages(private val id: String) {
         )
     }
 
-    fun button(label: String, action: String, eventId: String) {
+    fun button(label: String, prompt: String) {
         val labelId = add("Text", buildJsonObject { put("text", label) })
         children.remove(labelId)
         add(
@@ -52,8 +40,8 @@ class SurfaceMessages(private val id: String) {
                 put("variant", "primary")
                 putJsonObject("action") {
                     putJsonObject("event") {
-                        put("name", action)
-                        putJsonObject("context") { put("eventId", eventId) }
+                        put("name", "ask")
+                        putJsonObject("context") { put("prompt", prompt) }
                     }
                 }
             },
@@ -65,7 +53,7 @@ class SurfaceMessages(private val id: String) {
             "CheckBox",
             buildJsonObject {
                 put("label", label)
-                putJsonObject("value") { put("path", "/ready$index") }
+                putJsonObject("value") { put("path", "/choice$index") }
             },
         )
     }
@@ -82,17 +70,19 @@ class SurfaceMessages(private val id: String) {
             put("component", "Card")
             put("child", "content")
         }
-        fun message(key: String, body: JsonObject) = buildJsonObject {
-            put("version", "v0.9")
-            put(key, body)
-        }
-            .toString()
+        fun message(key: String, body: JsonObject) =
+            buildJsonObject {
+                    put("version", "v0.9")
+                    put(key, body)
+                }
+                .toString()
         return listOf(
             message(
                 "createSurface",
                 buildJsonObject {
                     put("surfaceId", id)
-                    put("catalogId", CATALOG)
+                    put("catalogId", UIAGENT_CATALOG_ID)
+                    put("sendDataModel", true)
                 },
             ),
             message(
@@ -114,58 +104,25 @@ class SurfaceMessages(private val id: String) {
     }
 
     companion object {
-        fun event(id: String, e: CommunityEvent) =
+        fun flight(id: String) =
             SurfaceMessages(id)
                 .apply {
-                    text(
-                        if (e.sponsored) "DevEarth · Sponsored listing"
-                        else "DevEarth · Published listing",
-                        "caption",
-                    )
-                    illustration()
-                    text("Community illustration", "caption")
-                    text(e.title, "h4")
-                    text("${e.date}\n${e.city} · ${e.entry}")
-                    text(e.topics, "caption")
-                    button("Explore venue", "venue", e.id)
-                    button("Help me prepare", "prepare", e.id)
+                    text("ILLUSTRATIVE · NOT A BOOKING", "caption")
+                    text("Bengaluru 09:40  →  Tokyo 20:15", "h4")
+                    text("Tue, 14 Oct · Terminal 1 · Gate G12 · Seat 14A")
+                    button("Create packing checklist", "Create a packing checklist for this trip")
                 }
                 .build()
 
-        fun venue(id: String, e: CommunityEvent) =
+        fun checklist(id: String) =
             SurfaceMessages(id)
                 .apply {
-                    text("THE VENUE", "caption")
-                    text(e.venue, "h4")
-                    text(e.address.ifBlank { e.city })
-                    text(
-                        "Location supplied by DevEarth. Open directions for the live map.",
-                        "caption",
-                    )
-                    if (e.maps.isNotBlank()) button("Open directions", "directions", e.id)
-                    button("Help me prepare", "prepare", e.id)
-                }
-                .build()
-
-        fun prepare(id: String, e: CommunityEvent) =
-            SurfaceMessages(id)
-                .apply {
-                    text("Your meetup checklist", "h4")
-                    text(e.title, "caption")
-                    listOf(
-                            "Review the event details",
-                            "Check registration",
-                            "Prepare two questions",
-                            "Pack essentials for the event",
-                        )
-                        .forEachIndexed { i, t -> checkbox(t, i) }
-                    text(
-                        "Suggestions, not organizer requirements. Saving does not register you.",
-                        "caption",
-                    )
-                    button("Update my plan", "refine", e.id)
-                    button("Save event", "save", e.id)
-                    button("Official event page", "website", e.id)
+                    text("Packing list", "h4")
+                    listOf("Passport", "Power adapter", "Comfortable shoes").forEachIndexed {
+                        index,
+                        label -> checkbox(label, index)
+                    }
+                    button("Refine list", "Refine my packing list using checked items")
                 }
                 .build()
     }

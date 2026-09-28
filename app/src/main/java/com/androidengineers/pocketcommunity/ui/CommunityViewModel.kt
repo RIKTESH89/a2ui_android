@@ -30,23 +30,21 @@ data class CommunityState(
     val trace: List<String> = emptyList(),
     val endpoint: String = "",
     val saved: Set<String> = emptySet(),
-    val pendingUrl: String? = null,
     val canRetry: Boolean = false,
 )
 
 class CommunityViewModel(
     private val repository: CommunityRepository,
-    catalog: A2uiCatalog,
+    catalogs: List<A2uiCatalog>,
     initialEndpoint: String = "",
     private val saveEndpoint: (String) -> Unit = {},
 ) : ViewModel() {
     private val mutable = MutableStateFlow(CommunityState(endpoint = initialEndpoint))
     val state = mutable.asStateFlow()
-    private val processor = A2uiMessageProcessor(listOf(catalog))
+    private val processor = A2uiMessageProcessor(catalogs)
     private val parser = A2uiMessageParser()
+    private val supportedCatalogIds = catalogs.map { it.id }
     val surfaces = processor.activeSurfaces
-    private var events: List<CommunityEvent> = emptyList()
-    private var selected: CommunityEvent? = null
     private var lastRequest: AgentRequest? = null
     private var job: Job? = null
     private var generation = 0
@@ -62,12 +60,9 @@ class CommunityViewModel(
                     is A2uiClientErrorMessage ->
                         mutable.update {
                             it.copy(
-                                error = "Unable to render the agent response: ${event.message}",
+                                error = "Unable to render the generated interface: ${event.message}",
                                 canRetry = lastRequest != null,
-                                items =
-                                    it.items.filterNot { item ->
-                                        item.surfaceId == event.surfaceId
-                                    },
+                                items = it.items.filterNot { item -> item.surfaceId == event.surfaceId },
                             )
                         }
                 }
@@ -78,7 +73,7 @@ class CommunityViewModel(
     fun configure(endpoint: String) {
         val clean = endpoint.trim()
         if (clean.isNotEmpty() && !validEndpoint(clean)) {
-            mutable.update { it.copy(error = "Enter a valid agent endpoint.") }
+            mutable.update { it.copy(error = "Enter a valid /chat agent endpoint.") }
             return
         }
         if (clean != state.value.endpoint && state.value.items.isNotEmpty()) {
@@ -95,15 +90,8 @@ class CommunityViewModel(
         generation++
         job?.cancel()
         componentHistory.clear()
-        selected = null
-        events = emptyList()
         lastRequest = null
-        surfaces.value.forEach { surface ->
-            processor.processInput(
-                parser,
-                """{"version":"v0.9","deleteSurface":{"surfaceId":"${surface.id}"}}""",
-            )
-        }
+        surfaces.value.forEach { surface -> deleteSurface(surface.id) }
         mutable.value = CommunityState(endpoint = state.value.endpoint, saved = state.value.saved)
     }
 
@@ -111,12 +99,8 @@ class CommunityViewModel(
         mutable.update { it.copy(error = null) }
     }
 
-    fun consumeUrl() {
-        mutable.update { it.copy(pendingUrl = null) }
-    }
-
     private fun trace(value: String) {
-        mutable.update { it.copy(trace = (it.trace + value).takeLast(80)) }
+        mutable.update { it.copy(trace = (it.trace + value).takeLast(100)) }
     }
 
     private fun append(text: String, user: Boolean = false) {
@@ -126,7 +110,7 @@ class CommunityViewModel(
     private fun history() =
         JsonArray(
             state.value.items
-                .filter { it.surfaceId == null }
+                .filter { it.surfaceId == null && it.text.isNotBlank() }
                 .takeLast(12)
                 .map {
                     buildJsonObject {
@@ -147,18 +131,16 @@ class CommunityViewModel(
         if (prompt.isBlank() || state.value.busy) return
         if (state.value.endpoint.isBlank()) {
             mutable.update {
-                it.copy(
-                    error = "Connect your Gemini agent in Setup before starting a conversation."
-                )
+                it.copy(error = "Connect the local UIAgent server in Setup before generating UI.")
             }
             return
         }
         val request =
             AgentRequest(
-                prompt.take(2000),
-                selected?.id,
-                UUID.randomUUID().toString(),
-                history(),
+                prompt = prompt.take(2000),
+                surfaceId = UUID.randomUUID().toString(),
+                supportedCatalogIds = supportedCatalogIds,
+                history = history(),
                 surfaceData = surfaceData(),
                 previousComponents = previousComponents(),
             )
@@ -178,95 +160,95 @@ class CommunityViewModel(
 
     fun retry() {
         if (!state.value.busy)
-            lastRequest?.let { submit(it.copy(surfaceId = UUID.randomUUID().toString())) }
+            lastRequest?.let {
+                submit(
+                    it.copy(
+                        surfaceId = UUID.randomUUID().toString(),
+                        surfaceData = surfaceData(),
+                        previousComponents = previousComponents(),
+                    )
+                )
+            }
     }
 
     private fun submit(request: AgentRequest) {
         lastRequest = request
         val epoch = generation
         val endpoint = state.value.endpoint
-        mutable.update { it.copy(busy = true, error = null, canRetry = false) }
-        job = viewModelScope.launch {
-            try {
-                events = repository.discover()
-                val reply = repository.ask(endpoint, request)
-                ensureActive()
-                if (epoch != generation) return@launch
-                require(reply.messages.size in 1..24) { "Agent returned an invalid message count." }
-                reply.messages.forEach { raw ->
-                    val message = Json.parseToJsonElement(raw).jsonObject
-                    val body =
-                        (message["createSurface"]
-                                ?: message["updateDataModel"]
-                                ?: message["updateComponents"])
-                            ?.jsonObject ?: error("Unsupported agent message.")
-                    require(body.string("surfaceId") == request.surfaceId) {
-                        "Unexpected surface in agent response."
+        mutable.update {
+            it.copy(
+                busy = true,
+                error = null,
+                canRetry = false,
+                items = it.items + ConversationItem(surfaceId = request.surfaceId),
+            )
+        }
+        job =
+            viewModelScope.launch {
+                try {
+                    val reply =
+                        repository.ask(endpoint, request) { raw ->
+                            withContext(Dispatchers.Main.immediate) {
+                                ensureActive()
+                                if (epoch == generation) processIncoming(request, raw)
+                            }
+                        }
+                    ensureActive()
+                    if (epoch != generation) return@launch
+                    if (reply.text.isNotBlank()) append(reply.text)
+                } catch (e: CancellationException) {
+                    deleteSurface(request.surfaceId)
+                    throw e
+                } catch (e: Exception) {
+                    if (epoch == generation) {
+                        deleteSurface(request.surfaceId)
+                        mutable.update {
+                            it.copy(
+                                items =
+                                    it.items.filterNot { item ->
+                                        item.surfaceId == request.surfaceId
+                                    },
+                                error = e.message ?: "Agent unavailable. Please retry.",
+                                canRetry = true,
+                            )
+                        }
                     }
+                } finally {
+                    if (epoch == generation) mutable.update { it.copy(busy = false) }
                 }
-                append(reply.text)
-                mutable.update {
-                    it.copy(items = it.items + ConversationItem(surfaceId = request.surfaceId))
-                }
-                reply.messages.forEach { raw ->
-                    val update =
-                        Json.parseToJsonElement(raw).jsonObject["updateComponents"]?.jsonObject
-                    (update?.get("components") as? JsonArray)?.let {
-                        componentHistory[request.surfaceId] = it
-                    }
-                    trace("IN $raw")
-                    processor.processInput(parser, raw)
-                    yield()
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (epoch == generation)
-                    mutable.update {
-                        it.copy(
-                            error = e.message ?: "Agent unavailable. Please retry.",
-                            canRetry = true,
-                        )
-                    }
-            } finally {
-                if (epoch == generation) mutable.update { it.copy(busy = false) }
+            }
+    }
+
+    private fun processIncoming(request: AgentRequest, raw: String) {
+        val message = Json.parseToJsonElement(raw).jsonObject
+        val create = message["createSurface"]?.jsonObject
+        val data = message["updateDataModel"]?.jsonObject
+        val components = message["updateComponents"]?.jsonObject
+        val body = create ?: data ?: components ?: error("Unsupported agent message.")
+        require(body.string("surfaceId") == request.surfaceId) {
+            "Unexpected surface in agent response."
+        }
+        create?.let {
+            require(it.string("catalogId") in supportedCatalogIds) {
+                "The agent selected an unsupported component catalog."
             }
         }
+        (components?.get("components") as? JsonArray)?.let {
+            componentHistory[request.surfaceId] = it
+        }
+        trace("IN $raw")
+        processor.processInput(parser, raw)
     }
 
     private fun action(event: A2uiClientEventMessage) {
         if (state.value.busy) return
-        val id = event.context["eventId"] as? String
-        val e = events.find { it.id == id }
-        if (e == null) {
-            mutable.update {
-                it.copy(error = "This event is no longer available. Ask for current events.")
-            }
-            return
-        }
-        selected = e
         when (event.type) {
-            "website",
-            "directions" -> {
-                val url = if (event.type == "website") e.website else e.maps
-                if (url.startsWith("https://")) mutable.update { it.copy(pendingUrl = url) }
-                else
-                    mutable.update { it.copy(error = "No HTTPS link is available for this event.") }
-            }
-            "save" -> {
-                mutable.update { it.copy(saved = it.saved + e.id) }
-                append("Saved for this session: ${e.title}. Registration is separate.")
-            }
-            "venue",
-            "prepare",
-            "refine" -> {
-                val prompt =
-                    when (event.type) {
-                        "venue" -> "Show the venue for ${e.title}"
-                        "prepare" -> "Help me prepare for ${e.title}"
-                        else ->
-                            "Update the preparation advice using my current checklist selections."
-                    }
+            "ask" -> {
+                val prompt = event.context["prompt"] as? String
+                if (prompt.isNullOrBlank() || prompt.length > 240) {
+                    mutable.update { it.copy(error = "The generated follow-up action was invalid.") }
+                    return
+                }
                 val action = buildJsonObject {
                     put("name", event.type)
                     put("surfaceId", event.surfaceId)
@@ -275,18 +257,36 @@ class CommunityViewModel(
                 }
                 val request =
                     AgentRequest(
-                        prompt,
-                        e.id,
-                        UUID.randomUUID().toString(),
-                        history(),
-                        action,
-                        surfaceData(),
-                        previousComponents(),
+                        prompt = prompt,
+                        surfaceId = UUID.randomUUID().toString(),
+                        supportedCatalogIds = supportedCatalogIds,
+                        history = history(),
+                        action = action,
+                        surfaceData = surfaceData(),
+                        previousComponents = previousComponents(),
                     )
                 append(prompt, true)
                 submit(request)
             }
+            "save" -> {
+                val itemId = event.context["itemId"] as? String
+                val title = event.context["title"] as? String
+                if (itemId.isNullOrBlank() || title.isNullOrBlank()) {
+                    mutable.update { it.copy(error = "The generated save action was invalid.") }
+                    return
+                }
+                mutable.update { it.copy(saved = it.saved + itemId) }
+                append("Saved locally for this session: $title.")
+            }
+            else -> mutable.update { it.copy(error = "Unsupported generated action: ${event.type}") }
         }
+    }
+
+    private fun deleteSurface(surfaceId: String) {
+        processor.processInput(
+            parser,
+            """{"version":"v0.9","deleteSurface":{"surfaceId":"$surfaceId"}}""",
+        )
     }
 }
 

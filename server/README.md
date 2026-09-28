@@ -1,16 +1,32 @@
-# PocketCommunity development agent
+# UIAgent development server
 
-Node.js 22+, no runtime npm dependencies. See the [app setup](../README.md#connect-gemini--where-the-key-goes).
+Node.js 22+ server for the UIAgent AndroidX A2UI client. It has no runtime npm dependencies and currently defaults to OpenRouter with `nvidia/nemotron-3-ultra-550b-a55b:free`.
 
 ```sh
 cp .env.example .env
-# Edit .env with your own Gemini key, then:
+# Add OPENROUTER_API_KEY to .env
 npm start
 npm test
 ```
 
-`GET /health` reports only configuration presence. `POST /chat` accepts `{prompt, eventId?, surfaceId, history?, action?, surfaceData?, previousComponents?}` and returns `{text, messages}`. The key is sent only to Google's Gemini API in a request header. The DevEarth source is fixed to the public discovery endpoint. No credentials are needed for discovery.
+`GET /health` reports the model, A2UI protocol, server-supported catalog IDs, and incremental transport. `POST /chat` accepts a bounded prompt/context payload. The client includes `metadata.a2uiClientCapabilities.supportedCatalogIds`, ordered by preference; the server selects the first mutually supported catalog for the lifetime of the new surface.
 
-This is a loopback-only development service, not a public deployment template. Add authenticated users, quotas, rate limits and operational monitoring before deploying. Your model must be available to your Gemini project. No model fallback or fabricated feed fallback exists. History is bounded to 12 turns and UI context to 3 component trees. On `refine`, checked values are carried into exact matching checklist labels; new or changed labels begin unchecked.
+When the client accepts `application/x-ndjson`, the server immediately emits `createSurface`, an empty data model, and a loading component tree. After inference and strict validation it emits final data/components and a completion record. Disconnecting the Android client cancels the upstream model call. Non-streaming JSON remains available as a compatibility fallback.
 
-The output validator bounds component counts, graph depth, text length, actions, event IDs and checkbox paths; rejects cycles, missing references, unregistered components and arbitrary functions; then wraps the agent's component composition in A2UI protocol messages. Schema checks cannot guarantee factual accuracy: evaluate rendered results against the supplied listing data.
+For real card imagery, add either `PEXELS_API_KEY` or `PIXABAY_API_KEY`. The model still emits only semantic `uiagent://image/...` identifiers. The server searches providers, downloads a bounded image into a 24-hour in-memory cache, replaces the semantic identifier with an opaque server-issued UIAgent asset reference, and serves the bytes from `/media/{assetId}`. Android displays provider/contributor attribution and keeps the gradient artwork as a failure fallback. Pixabay images are downloaded rather than permanently hotlinked. iStock is intentionally not integrated without a separately licensed commercial account/API agreement.
+
+The server validates component names/properties, graph reachability/depth, catalog choice, media identifiers, data paths, action shapes, text and payload sizes. The model can request only `uiagent://` media identifiers; Android resolves those through a trusted registry. Generated `ask` actions can only return a short non-URL prompt, and `save` is local-only.
+
+No live flight or weather provider is connected. The model is instructed to label invented values as illustrative and the validator is not a factuality proof. This service binds to loopback, limits concurrent inference (default one), bounds headers/body/timeouts, disables caching, and adds request IDs. It is still a development service: deploy behind authenticated HTTPS with user authorization, distributed rate limits, audit/abuse controls, and operational monitoring.
+
+Configuration:
+
+- `LLM_PROVIDER=openrouter|ollama|gemini`
+- `OPENROUTER_MODEL` and `OPENROUTER_API_KEY`
+- `IMAGE_PROVIDERS=pexels,pixabay` controls provider preference
+- `PEXELS_API_KEY` and `PIXABAY_API_KEY` are optional server-only image credentials
+- `OLLAMA_BASE_URL`, restricted to loopback
+- `OLLAMA_MODEL` (default `qwen3:14b`)
+- `GEMINI_MODEL` and `GEMINI_API_KEY` for the optional cloud provider
+- `MAX_CONCURRENT_REQUESTS` from 1–4
+- `PORT` (default 8787)

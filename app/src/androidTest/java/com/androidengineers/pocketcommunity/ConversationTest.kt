@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.androidengineers.pocketcommunity.data.*
 import com.androidengineers.pocketcommunity.ui.*
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -17,7 +18,11 @@ class ConversationTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val requests = mutableListOf<AgentRequest>()
 
-    private fun setup(fail: Boolean = false, configured: Boolean = true) {
+    private fun setup(
+        fail: Boolean = false,
+        configured: Boolean = true,
+        initialSurface: (String) -> List<String> = { SurfaceMessages.flight(it) },
+    ) {
         val repo =
             object : CommunityRepository {
                 override suspend fun ask(
@@ -28,7 +33,7 @@ class ConversationTest {
                     if (fail) error("Agent unavailable")
                     requests += request
                     val messages =
-                        if (request.action == null) SurfaceMessages.flight(request.surfaceId)
+                        if (request.action == null) initialSurface(request.surfaceId)
                         else SurfaceMessages.checklist(request.surfaceId)
                     messages.forEach { onMessage(it) }
                     return AgentReply("Generated with the negotiated UIAgent catalog.")
@@ -93,5 +98,24 @@ class ConversationTest {
         }
         compose.onNodeWithText("Dismiss").performClick()
         compose.onNodeWithText("Agent unavailable").assertDoesNotExist()
+    }
+
+    @Test
+    fun iconButtonRendersWithAccessibilityAndDispatchesAction() {
+        setup(initialSurface = { SurfaceMessages.remote(it) })
+        compose.onNodeWithText("Generate a flight card").performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Living Room · TV + Soundbar")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Mute soundbar").performScrollTo().performClick()
+        compose.waitUntil(10_000) { requests.size == 2 }
+        assertEquals("ask", requests.last().action?.string("name"))
+        assertEquals(
+            "Mute the soundbar",
+            requests.last().action?.get("context")?.jsonObject?.string("prompt"),
+        )
     }
 }

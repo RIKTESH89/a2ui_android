@@ -122,6 +122,53 @@ test('uses the AndroidX alpha01 wire value for secondary buttons', () => {
   assert.doesNotThrow(() => check(valid));
 });
 
+test('allows an icon as a button child', () => {
+  const reply = {
+    text: 'Soundbar control',
+    components: [
+      {
+        id: 'root',
+        component: 'Button',
+        child: 'muteIcon',
+        variant: 'default',
+        accessibility: { label: 'Mute soundbar' },
+        action: { event: { name: 'ask', context: { prompt: 'Mute the soundbar' } } },
+      },
+      { id: 'muteIcon', component: 'Icon', name: 'volumeMute' },
+    ],
+  };
+  assert.doesNotThrow(() => check(reply));
+});
+
+test('rejects a button child that is not text or an icon', () => {
+  const reply = {
+    text: 'Invalid nested control',
+    components: [
+      { id: 'root', component: 'Button', child: 'layout', variant: 'default', action: {
+        event: { name: 'ask', context: { prompt: 'Adjust the soundbar' } },
+      } },
+      { id: 'layout', component: 'Row', children: ['label'] },
+      { id: 'label', component: 'Text', text: 'Nested label' },
+    ],
+  };
+  assert.throws(() => check(reply), /Invalid button child/);
+});
+
+test('rejects an icon button without a bounded accessibility label', () => {
+  const reply = {
+    text: 'Unlabelled control',
+    components: [
+      { id: 'root', component: 'Button', child: 'icon', variant: 'default', action: {
+        event: { name: 'ask', context: { prompt: 'Mute the soundbar' } },
+      } },
+      { id: 'icon', component: 'Icon', name: 'volumeMute' },
+    ],
+  };
+  assert.throws(() => check(reply), /accessibility label/);
+  reply.components[0].accessibility = { label: 'Mute soundbar', invented: true };
+  assert.throws(() => check(reply), /accessibility label/);
+});
+
 test('rejects enum values that AndroidX A2UI cannot parse', () => {
   const badText = flight();
   badText.components[2].variant = 'subtitle';

@@ -148,7 +148,7 @@ export function validateSurface(
       Row: ['children', 'align', 'justify'],
       List: ['children', 'direction', 'align'],
       Card: ['child'],
-      Button: ['child', 'variant', 'action'],
+      Button: ['child', 'variant', 'accessibility', 'action'],
       CheckBox: ['label', 'value'],
       Divider: [],
       Image: ['url', 'description', 'fit', 'variant'],
@@ -219,6 +219,17 @@ export function validateSurface(
 
   if (!ids.has('root')) throw Error('Missing root');
   const byId = new Map(reply.components.map(component => [component.id, component]));
+  for (const component of reply.components) {
+    if (component.component !== 'Button') continue;
+    const childType = byId.get(component.child)?.component;
+    if (!['Text', 'Icon'].includes(childType)) throw Error('Invalid button child');
+    if (childType === 'Icon' && !validAccessibility(component.accessibility)) {
+      throw Error('Icon button requires an accessibility label');
+    }
+    if (component.accessibility !== undefined && !validAccessibility(component.accessibility)) {
+      throw Error('Invalid button accessibility');
+    }
+  }
   const seen = new Set();
   function walk(id, parents = new Set()) {
     if (!ids.has(id) || parents.has(id) || parents.size > 12) {
@@ -247,6 +258,20 @@ export function validateSurface(
 
 function isOptionalEnum(value, allowedValues) {
   return value === undefined || (typeof value === 'string' && allowedValues.has(value));
+}
+
+function validAccessibility(value) {
+  return (
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof value === 'object' &&
+    typeof value.label === 'string' &&
+    value.label.trim().length > 0 &&
+    value.label.length <= 80 &&
+    (value.description === undefined ||
+      (typeof value.description === 'string' && value.description.length <= 200)) &&
+    Object.keys(value).every(key => ['label', 'description'].includes(key))
+  );
 }
 
 export function loadingMessages(surfaceId, catalogId) {

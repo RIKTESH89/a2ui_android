@@ -5,9 +5,10 @@ Status: working Android prototype with OpenRouter and local-model provider paths
 ## Passed
 
 - Debug APK, Android-test APK, JVM tests, debug lint, and release APK build successfully.
-- 18 Node tests cover catalog negotiation, component/property and exact AndroidX enum restrictions, graph integrity, trusted media identifiers, built-in icon allowlisting, action allowlisting, checkbox bindings, incremental messages, provider-domain validation, bounded image download/cache, opaque asset serving, stateless signed media, and tamper rejection.
-- 3 emulator instrumentation tests exercise the real AndroidX A2UI renderer with generated flight/weather-style surfaces, follow-up actions, incremental updates, and endpoint setup behavior.
+- 21 Node tests cover catalog negotiation, component/property and exact AndroidX enum restrictions, graph integrity, trusted media identifiers, built-in icon allowlisting, text/icon button-child restrictions, mandatory icon-button accessibility labels, action allowlisting, checkbox bindings, incremental messages, provider-domain validation, bounded image download/cache, opaque asset serving, stateless signed media, and tamper rejection.
+- 4 emulator instrumentation tests exercise the real AndroidX A2UI renderer with generated flight/weather-style surfaces, accessible icon buttons, follow-up actions, incremental updates, and endpoint setup behavior.
 - Android JVM tests verify that only well-formed local or signed serverless UIAgent image references with official Pexels/Pixabay attribution URLs can resolve to the endpoint's `/media/{assetId}` route.
+- Protocol tests verify that a Button may reference a Text or trusted Icon child, while nested layouts and other component types are rejected as button content.
 - Live `qwen3:14b` through Ollama generated and rendered an illustrative Bengaluru-to-Tokyo flight card in native Compose.
 - After the provider switch, a live OpenRouter request using `nvidia/nemotron-3-ultra-550b-a55b:free` generated a richer Bengaluru-to-Tokyo ticket and passed validation. A second live request rendered an illustrative Bengaluru weather card with a native horizontal hourly rail on the emulator.
 - NDJSON delivery is genuinely incremental: the emulator displays `Composing your interface…` before Ollama finishes inference, then replaces that same surface with the final components.
@@ -17,6 +18,7 @@ Status: working Android prototype with OpenRouter and local-model provider paths
 - The Android client advertises UIAgent and Basic catalog IDs in preference order on every request. The server selects the first mutual catalog for each surface.
 - Server `.env` and local build configuration remain ignored. No API key is embedded in the APK.
 - The production Vercel smoke test generated a streamed birthday invitation surface through OpenRouter, resolved its semantic image through Pexels, and downloaded the resulting signed `/media/{assetId}` URL as a 28,840-byte JPEG. `/health` reports OpenRouter configured and Pexels enabled.
+- A live OpenRouter test using the original combined TV-and-soundbar request produced 58 valid components, including 20 buttons and 12 accessible icon-child buttons, without using the safe fallback.
 - `https://uiagent-a2ui.vercel.app/health` and `https://uiagent-a2ui.vercel.app/chat` are live independently of the laptop server. The local loopback server and existing Cloudflare development tunnel also remain healthy.
 
 ## Trust boundaries

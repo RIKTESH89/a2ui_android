@@ -48,6 +48,25 @@ class SurfaceMessages(private val id: String) {
         )
     }
 
+    fun iconButton(icon: String, accessibilityLabel: String, prompt: String) {
+        val iconId = add("Icon", buildJsonObject { put("name", icon) })
+        children.remove(iconId)
+        add(
+            "Button",
+            buildJsonObject {
+                put("child", iconId)
+                put("variant", "default")
+                putJsonObject("accessibility") { put("label", accessibilityLabel) }
+                putJsonObject("action") {
+                    putJsonObject("event") {
+                        put("name", "ask")
+                        putJsonObject("context") { put("prompt", prompt) }
+                    }
+                }
+            },
+        )
+    }
+
     fun checkbox(label: String, index: Int) {
         add(
             "CheckBox",
@@ -123,6 +142,16 @@ class SurfaceMessages(private val id: String) {
                         label -> checkbox(label, index)
                     }
                     button("Refine list", "Refine my packing list using checked items")
+                }
+                .build()
+
+        fun remote(id: String) =
+            SurfaceMessages(id)
+                .apply {
+                    text("Living Room · TV + Soundbar", "h4")
+                    iconButton("volumeDown", "Lower soundbar volume", "Lower the soundbar volume")
+                    iconButton("volumeMute", "Mute soundbar", "Mute the soundbar")
+                    iconButton("volumeUp", "Raise soundbar volume", "Raise the soundbar volume")
                 }
                 .build()
     }

@@ -10,6 +10,7 @@ The visual language is inspired by the supplied motion reference, but the flow i
 - Versioned UIAgent hybrid catalog plus Basic Catalog fallback registration.
 - Catalog capability metadata on every request and server-side best-match negotiation.
 - Native Text, Row, Column, List, Card, Button, CheckBox, Divider, Image and Video.
+- Text-labelled and icon-only actions through the standard A2UI Button component; icon buttons reference a trusted built-in Icon child rather than introducing a custom component.
 - Real Pexels/Pixabay imagery through a server-side search, validation, download/proxy and opaque asset-ID pipeline; branded gradients remain the fallback.
 - Safe built-in AndroidX A2UI icons selected from an explicit allowlist.
 - Media3/ExoPlayer playback with lifecycle cleanup and a client-side trusted media registry.
